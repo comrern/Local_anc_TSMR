@@ -5,8 +5,8 @@ library(readr)
 library(data.table)
 
 
-setwd("WD")
-token <- "<TOKEN>"
+setwd("../../data/")
+token <- readLines("token")[1]
 
 
 
