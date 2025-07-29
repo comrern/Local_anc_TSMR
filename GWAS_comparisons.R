@@ -1,6 +1,5 @@
-###########################################################
-
-#### Script to perform GWAS pair heterogeneity testing ####
+#########################################################################
+#### Script to download and clean GWAS for heterogeneity comparisons ####
 
 
 #### Steps
@@ -14,13 +13,11 @@
                 # Extract subset of SNPs in GWAS 1 from GWAS 2
           # Download EBI GWAS
 
-        
-    # 2. calculate heterogeneity stats
-          # Chochrane's Q
-          # I squared
-          # Replication rates
+    # 2. data cleaning
+          
 
-###########################################################
+
+######################################################################
 
 
 
@@ -34,6 +31,8 @@
   library(httr)
   library(curl)
   library(gwasrapidd)
+  library(VariantAnnotation)
+
 
 ##########################
 
@@ -91,36 +90,35 @@ ebi_pmids  <- as.character(latAm_gwas[latAm_gwas$source == "EBI" | latAm_gwas$id
 ebi_full_study_list <- get_studies(pubmed_id  = ebi_pmids)
 
 
-study_min_max <- data.frame()
-
-
-for (pmid in ebi_pmids){
-  study <- pmid
-  s <- get_studies(pubmed_id  = study)
-  s_l <-  c( study, min(s@studies$study_id), max(s@studies$study_id) )
-
-  study_min_max <- rbind(study_min_max, s_l)
-  
-}
-colnames(study_min_max) <- c("pmid","min","max")
-
-
 EBI_ids <- c(EBI_ids, no_vcf_list)
 
 
-study_min_max$pmid <- as.integer(study_min_max$pmid)
-EBI_studies <- unique(merge(latAm_gwas, study_min_max, by = "pmid"))
-
-EBI_studies <- EBI_studies[EBI_studies$id %in% EBI_ids,]
+EBI_studies <- latAm_gwas[latAm_gwas$id %in% EBI_ids,]
 EBI_studies$id <- gsub("ebi-a-", "", EBI_studies$id)
 
+EBI_data_locs <- fread("gwas_cat_locs.txt", header=F)
 
+EBI_studies$data_path <- sapply(EBI_studies$id, function(study_id) {
+  match_idx <- grep(study_id, EBI_data_locs$V1, fixed = TRUE)
+  if (length(match_idx) > 0) {
+    return(EBI_data_locs$V1[match_idx[1]])  # Return the first match (should be unique)
+  } else {
+    return(NA)  # No match foundS
+  }
+})
+
+
+EBI_studies <-EBI_studies[EBI_studies$trait != "asthma",]  # remove asthma as ancestry was miss-labelled
+
+
+
+#### loop download EBI GWAS
 for (study_id in EBI_studies$id){
   
   if (! file.exists(paste0("vcfs/", study_id, ".vcf.gz"))) {
     
     study <- EBI_studies[EBI_studies$id == study_id , ]
-    url <- paste0("https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/",study$min,"-",study$max,"/",study$id,"/",study$id,"_buildGRCh37.vcf.gz")
+    url <- paste0("https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/", study$data_path)
 
     ## check URl exists
     res <- HEAD(url)
@@ -129,19 +127,7 @@ for (study_id in EBI_studies$id){
       message(paste(study_id, "URL exists."))
       curl_download(url, destfile = paste0("vcfs/",study_id, ".vcf.gz"))
     } else {
-      
-      message(paste(study_id, "trying build GRCH38"))
-      url <- paste0("https://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/",study$min,"-",study$max,"/",study$id,"/",study$id,"_buildGRCh38.vcf.gz")
-      res <- HEAD(url)
-      
-      if (status_code(res) == 200) {
-        message(paste(study_id, "URL exists."))
-        curl_download(url, destfile = paste0("vcfs/",study_id, ".vcf.gz"))
-      } else {
         message(paste(study_id, "URL does not exist"))
-
-      }
-      
     }
     
     
@@ -151,16 +137,38 @@ for (study_id in EBI_studies$id){
   
 }
 
+###########################################################
+
+ ################## 1. data cleaning ###################
+
+###########################################################
+
+t <- readVcf("vcfs/ebi-a-GCST004605.vcf.gz")
+
+files <- list.files("vcfs/", full.names = TRUE)
 
 
-write.table(no_vcf_list, "missing_vcf_files.txt")
 
 
+###########################################################
+
+################ 1. heterogeneity testing #################
+
+###########################################################
 
 
-
-
-
-
-
+for (current_trait in unique_traits)  {
+  
+  g_l <- latAm_gwas[latAm_gwas$trait == current_trait,]
+  g_l <- g_l[order(g_l$sample_size),]
+  
+  GWAS_1 <- readVcf(paste0("vcfs/",g_l[1,]$id, ".vcf.gz"))
+  GWAS_2 <- readVcf(paste0("vcfs/",g_l[2,]$id, ".vcf.gz"))
+  
+  if (g_l[1,]$source == "IEU"){
+    GWAS_1 <- GWAS_1[COL_SELECTIOON]
+  
+  }
+  
+}
 
