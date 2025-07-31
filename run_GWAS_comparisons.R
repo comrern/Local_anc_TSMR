@@ -119,10 +119,10 @@ heterogeneity <- function(data){
 }
 
 
-get_instruments <- function(GWAS_1, GWAS_2){
+get_instruments <- function(ids_f){
   
-  g1 <- readVcf(paste0("vcfs/",ids_m[1], ".vcf.gz"))
-  g2 <- readVcf(paste0("vcfs/",ids_m[2], ".vcf.gz"))
+  g1 <- readVcf(paste0("vcfs/",ids_f[1], ".vcf.gz"))
+  g2 <- readVcf(paste0("vcfs/",ids_f[2], ".vcf.gz"))
   
   g1_tophits <- vcf_to_tibble(query_gwas(g1, pval = 5e-8))
   g2_tophits <- vcf_to_tibble(query_gwas(g2, pval = 5e-8))
@@ -139,133 +139,101 @@ get_instruments <- function(GWAS_1, GWAS_2){
   
   regions <- lapply(regions, function(r){
     
-    a <- ieugwasr::associations(r, ids_m)
-    
-      if (inherits(a, "response")) {
-        message("Received a response object. Sleeping for 10 minutes and retrying...")
-        Sys.sleep(600)
-        a <- ieugwasr::associations(r, ids_m)
-      }
-    
-    # Only attempt to arrange if it's not a response object
-      if (!inherits(a, "response")) {
-        a <- a %>%
-          dplyr::arrange(position) %>%
+      a <- rbind(vcf_to_tibble(query_gwas(g1, chrompos = r)),
+                 vcf_to_tibble(query_gwas(g2, chrompos = r)))  %>%
+          dplyr::arrange(start) %>%
           dplyr::bind_rows()
-        
         message(nrow(a))
-     
-        a <- lapply(ids_m, function(i) {
-          subset(a, id == i) %>%
-            dplyr::filter(!duplicated(rsid))
-        })
-        rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
-        a <- lapply(a, function(x) {
-          subset(x, rsid %in% rsids)
-        })
-        ea <- a[[1]]$ea
-        a <- lapply(a, function(x) {
-          index <- x$ea != ea
-          if (sum(index) > 0) {
-            x$beta[index] <- x$beta[index] * -1
-            nea <- x$nea[index]
-            x$nea[index] <- x$ea[index]
-            x$ea[index] <- x$nea[index]
-            x$eaf[index] <- 1 - x$eaf[index]
-            x <- subset(x, nea == a[[1]]$nea)
-          }
-          return(x)
-        })
-        rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
-        a <- lapply(a, function(x) {
-          subset(x, rsid %in% rsids) %>%
-            dplyr::arrange(chr, position)
-        })
-        
-      } else {
-        message("Second attempt also failed. Skipping this set.")
-        a <- NULL
-    }
-    return(a)
-    })
+   
+      a <- lapply(ids_f, function(i) {
+        subset(a, id == i) %>%
+          dplyr::filter(!duplicated(rsid))
+      })
+      rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
+      a <- lapply(a, function(x) {
+        subset(x, rsid %in% rsids)
+      })
+      ALT <- a[[1]]$ALT
+      a <- lapply(a, function(x) {
+        index <- x$ALT != ALT
+        if (sum(index) > 0) {
+          x$ES[index] <- x$ES[index] * -1
+          REF <- x$REF[index]
+          x$REF[index] <- x$ALT[index]
+          x$ALT[index] <- x$REF[index]
+          x$AF[index] <- 1 - x$AF[index]
+          x <- subset(x, REF == a[[1]]$REF)
+        }
+        return(x)
+      })
+      rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
+      a <- lapply(a, function(x) {
+        subset(x, rsid %in% rsids) %>%
+          dplyr::arrange(seqnames, start)
+      })
+      return(a)
+      })
+  
+  ## merge all regions DFs
+  
+  # Extract all the first data frames (i.e., [[1]] from each sublist)
+  r1 <- lapply(regions, function(x) x[[1]])
+  
+  # Extract all the second data frames (i.e., [[2]] from each sublist)
+  r2 <- lapply(regions, function(x) x[[2]])
+  
+  # Combine them
+  r1_combined <- do.call(rbind, r1)
+  r2_combined <- do.call(rbind, r2)
+  
+  return(list(g1_raw = g1_merge, g2_raw = g2_merge, r1_fema = r1_combined, r2_fema = r2_combined ))
+  
 }
 
+run_fema <- function(betas, ses) {
+  w <- 1 / ses^2
+  beta <- rowSums(betas * w) / rowSums(w, na.rm=TRUE)
+  se <- sqrt(1 / rowSums(w, na.rm=TRUE))
+  z <- abs(beta / se)
+  p <- pnorm(z, lower.tail = FALSE)
+  nstudy <- apply(betas, 1, \(x) sum(!is.na(x)))
+  return(tibble(nstudy, p, z=z))
+}
+  
+  
+  
+}
 
-
-heterogeneity_calcs <- function(ids, method){
+heterogeneity_calcs <- function(df1, df2, method){
   
   if (method == "raw"){
-      suppressMessages(g1_tophits <- ieugwasr::tophits(ids[1], pval = 5e-6, pop = "AMR" , opengwas_jwt = token))
-      suppressMessages(g2_tophits <- ieugwasr::tophits(ids[2], pval = 5e-6,  pop = "AMR", opengwas_jwt = token))
       
-      
-      g1_chunks <- split(g1_tophits$rsid, ceiling(seq_along(g1_tophits$rsid) / 30))
-      g2_chunks <- split(g2_tophits$rsid, ceiling(seq_along(g2_tophits$rsid) / 30))
-      
-      # Initialize result container
-      results <- list()
-      
-      # Loop through each chunk
-      for (i in seq_along(g1_chunks)) {
-        chunk <- g1_chunks[[i]]
-        
-        # Try-catch to avoid API errors breaking the loop
-        try({
-          res <- extract_outcome_data(snps = chunk, outcomes = ids[2])
-          results[[i]] <- res
-        }, silent = TRUE)
-      }
-      
-      # Combine all results
-      g2_g1tophits <- bind_rows(results)
-      
-      
-      results <- list()
-      
-  
-      for (i in seq_along(g2_chunks)) {
-        chunk <- g2_chunks[[i]]
-        
-        try({
-          res <- extract_outcome_data(snps = chunk, outcomes = ids[1])
-          results[[i]] <- res
-        }, silent = TRUE)
-      }
-      
-      g1_g2tophits <- bind_rows(results)
-      
-      
-      g1_merge <- merge(g1_tophits, g2_g1tophits, by = "rsid")
-      g2_merge <- merge(g2_tophits, g1_g2tophits, by = "rsid")
-      
+      g1xg2 <- merge(df1[df1$LP > 8,], df2, by= "rsid")
+      g2xg1 <- merge(df2[df2$LP > 8,], df1, by= "rsid")
+
       g1xg2 <- heterogeneity(g1_merge)
       g2xg1 <- heterogeneity(g2_merge)
         
-      df <- data.frame(rbind(g1xg2, g2xg1))
-      df[,1] <- ids
+      out <- data.frame(rbind(g1xg2, g2xg1))
+      out[,1] <- ids
+      out$method = "raw"
       
   }    
   
   
   if (method == "fema"){
-    # FEMA_SNPS <- fixed_effects_meta_analysis_fast(
-    #                        as.matrix(g1_merge[,"beta.x","beta.y"])     
-                                      # )
-                            
+    
+    fema_dat_merge <- merge(df1, df2, by = "rsid")
+    
+    FEMA_SNPS <- run_fema( as.matrix(fema_dat_merge[,"beta.x","beta.y"], fema_dat_merge["se.x","se.y"]) )
+    
+    out <- heterogeneity(FEMA_SNPS)
+    out$method = "fema"                       
   }
   
   return(df)
   
 }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -297,7 +265,7 @@ latAm_gwas <- latAm_gwas[latAm_gwas$source == "IEU" & latAm_gwas$trait != "asthm
 unique_traits <- unique(latAm_gwas$trait)
 
 all_phen <- data.frame()
-raw_het <- data.frame()
+het <- data.frame()
 for (current_trait in unique_traits)  {
   
   g_l <- latAm_gwas[latAm_gwas$trait == current_trait,]
@@ -312,8 +280,11 @@ for (current_trait in unique_traits)  {
   instruments <- get_instruments(ids_m)
   
   
-  h <- heterogeneity_calcs(ids_m, "raw")
-  raw_het <- dplyr::bind_rows(raw_het, h)
+  h <- heterogeneity_calcs(instruments[g1_raw], instruments[g2_raw], "raw")
+  het <- dplyr::bind_rows(het, h)
+  
+  h <- heterogeneity_calcs(instruments[r1_fema], instruments[r2_fema], "fema")
+  het <- dplyr::bind_rows(het, h)
   
   
 }
