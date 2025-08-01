@@ -190,12 +190,16 @@ run_fema <- function(betas, ses) {
 }
   
 
-get_region_instruments <- function( instrument_regions, instrument_raw , n) {
+get_region_instruments <- function( instrument_regions, instrument_raw ) {
+  
+  # slightly hacky fix to name regions
+  names(instrument_regions) <- instrument_raw$rsid
+  
   
   # remove duplicated ids from instrument_regions
   instrument_regions <- lapply(instrument_regions, \(x) {
     lapply(x, \(y) {
-      subset(y, !duplicated(rsid))
+      y[!duplicated(y$rsid), ]
     })
   })
   
@@ -216,11 +220,11 @@ get_region_instruments <- function( instrument_regions, instrument_raw , n) {
       r %>% dplyr::filter(rsid %in% rsidintersect) %>% dplyr::filter(!duplicated(rsid)) %>% dplyr::arrange(rsid)
     })
     
-    d <- dplyr::select(x[[1]], chr, position, rsid, ea, nea, rsido, trait)
+    d <- dplyr::select(x[[1]], seqnames, start, rsid, ALT, REF, rsid, id)
 
     d1 <- run_fema(
-        sapply(x, \(y) y$beta), 
-        sapply(x, \(y) y$se)
+        sapply(x, \(y) y$ES), 
+        sapply(x, \(y) y$SE)
     )
     
     d <- dplyr::bind_cols(d, d1)
@@ -241,11 +245,10 @@ get_region_instruments <- function( instrument_regions, instrument_raw , n) {
       subset(p, rsid == dsel$rsid[i])
     }) %>% 
       dplyr::bind_rows() %>% 
-      dplyr::mutate(id=names(instrument_regions[[dsel$region[i]]]))
-  }) %>% dplyr::bind_rows() %>%
-    dplyr::filter(!duplicated(paste(id, rsid)))
-  self$instrument_fema <- inst
-  self$instrument_fema_regions <- d
+      dplyr::mutate(id_snp=names(instrument_regions[[dsel$region[i]]]))
+  }) %>% dplyr::bind_rows()  %>%
+   dplyr::filter(!duplicated(paste(id, rsid)))
+
   return(inst)
 }
 
@@ -262,7 +265,7 @@ heterogeneity_calcs <- function(df1, df2, method){
       g1xg2 <- heterogeneity(g1xg2)
       g2xg1 <- heterogeneity(g2xg1)
         
-      out <- data.frame(rbind(g1xg2, g2xg1))
+      out <- as.data.frame(rbind(g1xg2, g2xg1))
       out[,1] <- c(unique(df1$id), unique(df2$id))
       out$method = "raw"
       
@@ -273,9 +276,13 @@ heterogeneity_calcs <- function(df1, df2, method){
     
     
     
-    FEMA_SNPS <- get_region_instruments(df1, df2, 20000)
-    print("")
-    out <- heterogeneity(FEMA_SNPS)
+    FEMA_SNPS <- get_region_instruments(df1, df2[[1]])
+    
+    het_i <- merge(df2[[1]], df2[[2]], by="rsid")
+    het_i <- het_i[het_i$rsid %in% FEMA_SNPS$rsid, ]
+    
+    out <- data.frame(t(heterogeneity(het_i)))
+    out[,1] <- unique(df2[[1]]$id)
     out$method = "fema"                       
   }
   
@@ -321,7 +328,7 @@ for (current_trait in unique_traits)  {
   
   ids_m <-c(g_l[1,]$id, g_l[2,]$id)
   
-  
+
   p <- pheno_harm(ids_m)
   all_phen <- dplyr::bind_rows(all_phen, p)
   
@@ -331,23 +338,13 @@ for (current_trait in unique_traits)  {
   h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
   het <- dplyr::bind_rows(het, h)
   
-  h <- heterogeneity_calcs(instruments[3], NULL , "fema")
+  h <- heterogeneity_calcs(instruments[[3]], instruments[1:2] , "fema")
   het <- dplyr::bind_rows(het, h)
  
 }
 
-
-################## 
-
- ### DEBUG ###
-
-## write test instrument data
-
-write.table(instruments$g1_raw, "test_g1.txt", row.names= F, quote = F)
-write.table(instruments$g2_raw, "test_g2.txt", row.names= F, quote = F)
-write.table(instruments$r1_fema, "test_r1.txt", row.names= F, quote = F)
-write.table(instruments$r2_fema, "test_r2.txt", row.names= F, quote = F)
-
+write.table(all_phen, "pheno_results.txt",quote = F, row.names = F)
+write.table(het, "het_results.txt",quote = F, row.names = F)
 
 
 
