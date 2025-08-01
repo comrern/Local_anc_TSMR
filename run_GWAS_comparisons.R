@@ -82,8 +82,8 @@ heterogeneity <- function(data){
   
   for (i in 1:nrow(data)){
     
-    betas <- data[i,c("beta.x","beta.y")] 
-    ses <- data[i,c("beta.x","beta.y")]
+    betas <- data[i,c("ES.x","ES.y")] 
+    ses <- data[i,c("SE.x","SE.y")]
     
     w <- 1 / (ses)^2 # get weights
     ivw_b <- sum(betas * w) / sum(w) # ivw betas
@@ -130,8 +130,8 @@ get_instruments <- function(ids_f){
   g2_g1tophits <- vcf_to_tibble(query_gwas(g2, rsid = g1_tophits$rsid))
   g1_g2tophits <- vcf_to_tibble(query_gwas(g1, rsid = g2_tophits$rsid))
   
-  g1_merge <- rbind(g1_tophits, g1_g2tophits[g1_g2tophits$rsid %in% g1_tophits$rsid,])
-  g2_merge <- rbind(g2_tophits, g2_g1tophits[g2_g1tophits$rsid %in% g2_g1tophits$rsid,])
+  g1_merge <- rbind(g1_tophits, g1_g2tophits[!g1_g2tophits$rsid %in% g1_tophits$rsid,])
+  g2_merge <- rbind(g2_tophits, g2_g1tophits[!g2_g1tophits$rsid %in% g2_tophits$rsid,])
   
   
   ##### extract regions for tophit SNPs in either gwas
@@ -208,14 +208,14 @@ heterogeneity_calcs <- function(df1, df2, method){
   
   if (method == "raw"){
       
-      g1xg2 <- merge(df1[df1$LP > 8,], df2, by= "rsid")
-      g2xg1 <- merge(df2[df2$LP > 8,], df1, by= "rsid")
+      g1xg2 <- merge(df1[df1$LP > 7.3,], df2, by= "rsid")
+      g2xg1 <- merge(df2[df2$LP > 7.3,], df1, by= "rsid")
 
       g1xg2 <- heterogeneity(g1xg2)
       g2xg1 <- heterogeneity(g2xg1)
         
       out <- data.frame(rbind(g1xg2, g2xg1))
-      out[,1] <- ids
+      out[,1] <- c(unique(df1$id), unique(df2$id))
       out$method = "raw"
       
   }    
@@ -231,7 +231,7 @@ heterogeneity_calcs <- function(df1, df2, method){
     out$method = "fema"                       
   }
   
-  return(df)
+  return(out)
   
 }
 
