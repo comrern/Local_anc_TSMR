@@ -174,19 +174,8 @@ get_instruments <- function(ids_f){
       return(a)
       })
   
-  ## merge all regions DFs
-  
-  # Extract all the first data frames (i.e., [[1]] from each sublist)
-  r1 <- lapply(regions, function(x) x[[1]])
-  
-  # Extract all the second data frames (i.e., [[2]] from each sublist)
-  r2 <- lapply(regions, function(x) x[[2]])
-  
-  # Combine them
-  r1_combined <- do.call(rbind, r1)
-  r2_combined <- do.call(rbind, r2)
-  
-  return(list(g1_raw = g1_merge, g2_raw = g2_merge, r1_fema = r1_combined, r2_fema = r2_combined ))
+
+  return(list(g1_raw = g1_merge, g2_raw = g2_merge, regions ))
   
 }
 
@@ -200,7 +189,66 @@ run_fema <- function(betas, ses) {
   return(tibble(nstudy, p, z=z))
 }
   
+
+get_region_instruments <- function( instrument_regions, instrument_raw , n) {
   
+  # remove duplicated ids from instrument_regions
+  instrument_regions <- lapply(instrument_regions, \(x) {
+    lapply(x, \(y) {
+      subset(y, !duplicated(rsid))
+    })
+  })
+  
+  # remove regions that have no data
+  rem <- lengths(instrument_regions) == 0
+  if (any(rem)) {
+    message(sum(rem), " regions have no data")
+    instrument_regions <- instrument_regions[!rem]
+  }
+  
+  # for every region, create mats, do scan
+  d <- lapply(instrument_regions, \(x) {
+    if(is.null(x)) return(NULL)
+    if(nrow(x[[1]]) == 0) return(NULL)
+    
+    rsidintersect <- Reduce(intersect, lapply(x, \(r) r$rsid))
+    x <- lapply(x, \(r) {
+      r %>% dplyr::filter(rsid %in% rsidintersect) %>% dplyr::filter(!duplicated(rsid)) %>% dplyr::arrange(rsid)
+    })
+    
+    d <- dplyr::select(x[[1]], chr, position, rsid, ea, nea, rsido, trait)
+
+    d1 <- run_fema(
+        sapply(x, \(y) y$beta), 
+        sapply(x, \(y) y$se)
+    )
+    
+    d <- dplyr::bind_cols(d, d1)
+  })
+  
+  # Keep best SNP from each region
+  names(d) <- names(instrument_regions)
+  d[sapply(d, is.null)] <- NULL
+  d[sapply(d, \(d1) {nrow(d1) == 0})] <- NULL
+  dsel <- lapply(d, \(x) {
+    subset(x, z == max(x$z, na.rm=TRUE))[1,]
+  }) %>% dplyr::bind_rows()
+  dsel$region <- names(d)
+  # Extract best SNPs from regions for each pop
+  inst <- lapply(1:nrow(dsel), \(i) {
+    lapply(instrument_regions[[dsel$region[i]]], \(p) {
+      
+      subset(p, rsid == dsel$rsid[i])
+    }) %>% 
+      dplyr::bind_rows() %>% 
+      dplyr::mutate(id=names(instrument_regions[[dsel$region[i]]]))
+  }) %>% dplyr::bind_rows() %>%
+    dplyr::filter(!duplicated(paste(id, rsid)))
+  self$instrument_fema <- inst
+  self$instrument_fema_regions <- d
+  return(inst)
+}
+
   
 
 
@@ -223,10 +271,10 @@ heterogeneity_calcs <- function(df1, df2, method){
   
   if (method == "fema"){
     
-    fema_dat_merge <- merge(df1, df2, by = "rsid")
     
-    FEMA_SNPS <- run_fema( as.matrix(fema_dat_merge[,"beta.x","beta.y"], fema_dat_merge["se.x","se.y"]) )
     
+    FEMA_SNPS <- get_region_instruments(df1, df2, 20000)
+    print("")
     out <- heterogeneity(FEMA_SNPS)
     out$method = "fema"                       
   }
@@ -283,7 +331,7 @@ for (current_trait in unique_traits)  {
   h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
   het <- dplyr::bind_rows(het, h)
   
-  h <- heterogeneity_calcs(instruments[r1_fema], instruments[r2_fema], "fema")
+  h <- heterogeneity_calcs(instruments[3], NULL , "fema")
   het <- dplyr::bind_rows(het, h)
  
 }
