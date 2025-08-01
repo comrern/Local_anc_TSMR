@@ -202,7 +202,7 @@ run_fema <- function(betas, ses) {
   
   
   
-}
+
 
 heterogeneity_calcs <- function(df1, df2, method){
   
@@ -211,8 +211,8 @@ heterogeneity_calcs <- function(df1, df2, method){
       g1xg2 <- merge(df1[df1$LP > 8,], df2, by= "rsid")
       g2xg1 <- merge(df2[df2$LP > 8,], df1, by= "rsid")
 
-      g1xg2 <- heterogeneity(g1_merge)
-      g2xg1 <- heterogeneity(g2_merge)
+      g1xg2 <- heterogeneity(g1xg2)
+      g2xg1 <- heterogeneity(g2xg1)
         
       out <- data.frame(rbind(g1xg2, g2xg1))
       out[,1] <- ids
@@ -274,21 +274,31 @@ for (current_trait in unique_traits)  {
   ids_m <-c(g_l[1,]$id, g_l[2,]$id)
   
   
-  # p <- pheno_harm(ids_m)
-  # all_phen <- dplyr::bind_rows(all_phen, p)
+  p <- pheno_harm(ids_m)
+  all_phen <- dplyr::bind_rows(all_phen, p)
   
   instruments <- get_instruments(ids_m)
   
   
-  h <- heterogeneity_calcs(instruments[g1_raw], instruments[g2_raw], "raw")
+  h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
   het <- dplyr::bind_rows(het, h)
   
   h <- heterogeneity_calcs(instruments[r1_fema], instruments[r2_fema], "fema")
   het <- dplyr::bind_rows(het, h)
-  
-  
+ 
 }
 
+
+################## 
+
+ ### DEBUG ###
+
+## write test instrument data
+
+write.table(instruments$g1_raw, "test_g1.txt", row.names= F, quote = F)
+write.table(instruments$g2_raw, "test_g2.txt", row.names= F, quote = F)
+write.table(instruments$r1_fema, "test_r1.txt", row.names= F, quote = F)
+write.table(instruments$r2_fema, "test_r2.txt", row.names= F, quote = F)
 
 
 
