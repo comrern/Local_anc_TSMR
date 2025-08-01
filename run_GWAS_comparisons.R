@@ -119,23 +119,55 @@ heterogeneity <- function(data){
 }
 
 
-get_instruments <- function(ids_f){
+get_instruments <- function(ids){
   
-  g1 <- readVcf(paste0("vcfs/",ids_f[1], ".vcf.gz"))
-  g2 <- readVcf(paste0("vcfs/",ids_f[2], ".vcf.gz"))
   
-  g1_tophits <- vcf_to_tibble(query_gwas(g1, pval = 5e-8))
-  g2_tophits <- vcf_to_tibble(query_gwas(g2, pval = 5e-8))
-  
-  g2_g1tophits <- vcf_to_tibble(query_gwas(g2, rsid = g1_tophits$rsid))
-  g1_g2tophits <- vcf_to_tibble(query_gwas(g1, rsid = g2_tophits$rsid))
-  
-  g1_merge <- rbind(g1_tophits, g1_g2tophits[!g1_g2tophits$rsid %in% g1_tophits$rsid,])
-  g2_merge <- rbind(g2_tophits, g2_g1tophits[!g2_g1tophits$rsid %in% g2_tophits$rsid,])
+    suppressMessages(g1_tophits <- ieugwasr::tophits(ids[1], pval = 5e-6, pop = "AMR" , opengwas_jwt = token))
+    suppressMessages(g2_tophits <- ieugwasr::tophits(ids[2], pval = 5e-6,  pop = "AMR", opengwas_jwt = token))
+    
+    
+    g1_chunks <- split(g1_tophits$rsid, ceiling(seq_along(g1_tophits$rsid) / 30))
+    g2_chunks <- split(g2_tophits$rsid, ceiling(seq_along(g2_tophits$rsid) / 30))
+    
+    # Initialize result container
+    results <- list()
+    
+    # Loop through each chunk
+    for (i in seq_along(g1_chunks)) {
+      chunk <- g1_chunks[[i]]
+      
+      # Try-catch to avoid API errors breaking the loop
+      try({
+        res <- extract_outcome_data(snps = chunk, outcomes = ids[2])
+        results[[i]] <- res
+      }, silent = TRUE)
+    }
+    
+    # Combine all results
+    g2_g1tophits <- bind_rows(results)
+    
+    
+    results <- list()
+    
+    
+    for (i in seq_along(g2_chunks)) {
+      chunk <- g2_chunks[[i]]
+      
+      try({
+        res <- extract_outcome_data(snps = chunk, proxies = 0, outcomes = ids[1])
+        results[[i]] <- res
+      }, silent = TRUE)
+    }
+    
+    g1_g2tophits <- bind_rows(results)
+    
+    
+    g1_merge <- merge(g1_tophits, g2_g1tophits, by = "rsid")
+    g2_merge <- merge(g2_tophits, g1_g2tophits, by = "rsid")
   
   
   ##### extract regions for tophit SNPs in either gwas
-  regions <- paste0(g1_merge$seqnames, ":", g1_merge$start - 50000, "-", g1_merge$end + 50000)
+  regions <- paste0(g1_merge$chr, ":", g1_merge$pos - 50000, "-", g1_merge$pos + 50000)
   
   regions <- lapply(regions, function(r){
     
