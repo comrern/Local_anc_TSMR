@@ -25,7 +25,6 @@ library(VariantAnnotation)
 setwd("../../data/")
 token <- readLines("token")[1]
 
-
 ###########################################################
 
     ################## Functions ##################
@@ -120,15 +119,19 @@ heterogeneity <- function(data){
 
 
 get_instruments <- function(ids_f){
+
+  g1_path <- paste0("vcfs/",ids_f[1], ".vcf.gz")
+  g2_path <- paste0("vcfs/",ids_f[2], ".vcf.gz")
   
-  g1 <- readVcf(paste0("vcfs/",ids_f[1], ".vcf.gz"))
-  g2 <- readVcf(paste0("vcfs/",ids_f[2], ".vcf.gz"))
+  # get top htis
+  g1_tophits <- vcf_to_tibble(query_gwas(g1_path, pval=5e-8))
+  g2_tophits <- vcf_to_tibble(query_gwas(g2_path, pval=5e-8))
   
-  g1_tophits <- vcf_to_tibble(query_gwas(g1, pval = 5e-8))
-  g2_tophits <- vcf_to_tibble(query_gwas(g2, pval = 5e-8))
+  g1_tophits$chrpos <- paste0(g1_tophits$seqnames, ":", g1_tophits$start, "-", g1_tophits$end )
+  g2_tophits$chrpos <- paste0(g2_tophits$seqnames, ":", g2_tophits$start, "-", g2_tophits$end )
   
-  g2_g1tophits <- vcf_to_tibble(query_gwas(g2, rsid = g1_tophits$rsid))
-  g1_g2tophits <- vcf_to_tibble(query_gwas(g1, rsid = g2_tophits$rsid))
+  g2_g1tophits <- vcf_to_tibble(query_gwas(g2_path, rsid = g1_tophits$chrpos))
+  g1_g2tophits <- vcf_to_tibble(query_gwas(g1_path, rsid = g2_tophits$chrpos))
   
   g1_merge <- rbind(g1_tophits, g1_g2tophits[!g1_g2tophits$rsid %in% g1_tophits$rsid,])
   g2_merge <- rbind(g2_tophits, g2_g1tophits[!g2_g1tophits$rsid %in% g2_tophits$rsid,])
