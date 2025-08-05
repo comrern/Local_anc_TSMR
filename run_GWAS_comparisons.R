@@ -323,24 +323,28 @@ all_phen <- data.frame()
 het <- data.frame()
 for (current_trait in unique_traits)  {
   
+
   g_l <- latAm_gwas[latAm_gwas$trait == current_trait,]
   g_l <- g_l[order(g_l$sample_size, decreasing = T),]
   
   ids_m <-c(g_l[1,]$id, g_l[2,]$id)
   
-
-  p <- pheno_harm(ids_m)
-  all_phen <- dplyr::bind_rows(all_phen, p)
-  
-  instruments <- get_instruments(ids_m)
-  
-  
-  h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
-  het <- dplyr::bind_rows(het, h)
-  
-  h <- heterogeneity_calcs(instruments[[3]], instruments[1:2] , "fema")
-  het <- dplyr::bind_rows(het, h)
- 
+  if (file.exists(paste0("vcfs/",ids_m[1], ".vcf.gz")) &
+      file.exists(paste0("vcfs/",ids_m[2], ".vcf.gz"))){
+    
+            p <- pheno_harm(ids_m)
+            all_phen <- dplyr::bind_rows(all_phen, p)
+            
+            instruments <- get_instruments(ids_m)
+            
+            
+            h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
+            het <- dplyr::bind_rows(het, h)
+            
+            h <- heterogeneity_calcs(instruments[[3]], instruments[1:2] , "fema")
+            het <- dplyr::bind_rows(het, h)
+            
+  } else { print("File(s) does not exists")}
 }
 
 write.table(all_phen, "pheno_results.txt",quote = F, row.names = F)
