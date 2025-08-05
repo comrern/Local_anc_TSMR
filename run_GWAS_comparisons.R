@@ -20,6 +20,8 @@ library(TwoSampleMR)
 library(ieugwasr)
 library(dplyr)
 library(gwasvcf)
+library(CAMeRa, lib.loc = "/user/home/kb22541/R/x86_64-conda-linux-gnu-library/4.4/")
+library(genetics.binaRies, lib.loc= "/user/home/kb22541/R/x86_64-conda-linux-gnu-library/4.4")
 library(VariantAnnotation)
 
 setwd("../../data/")
@@ -120,6 +122,7 @@ heterogeneity <- function(data){
 
 get_instruments <- function(ids_f){
 
+  
   g1_path <- paste0("vcfs/",ids_f[1], ".vcf.gz")
   g2_path <- paste0("vcfs/",ids_f[2], ".vcf.gz")
   
@@ -127,11 +130,26 @@ get_instruments <- function(ids_f){
   g1_tophits <- vcf_to_tibble(query_gwas(g1_path, pval=5e-8))
   g2_tophits <- vcf_to_tibble(query_gwas(g2_path, pval=5e-8))
   
+  if (length(g1_tophits[1,] < 1)){
+    g1_tophits <- vcf_to_tibble(query_gwas(g1_path, pval=5e-7))
+    "G1 has too few SNPs, reducing threshold"
+  }
+  if (length(g2_tophits[1,] < 1)){
+    g2_tophits <- vcf_to_tibble(query_gwas(g2_path, pval=5e-7))
+    "G2 has too few SNPs, reducing threshold"
+  }
+  
+  
+  
   g1_tophits$chrpos <- paste0(g1_tophits$seqnames, ":", g1_tophits$start, "-", g1_tophits$end )
   g2_tophits$chrpos <- paste0(g2_tophits$seqnames, ":", g2_tophits$start, "-", g2_tophits$end )
   
-  g2_g1tophits <- vcf_to_tibble(query_gwas(g2_path, rsid = g1_tophits$chrpos))
-  g1_g2tophits <- vcf_to_tibble(query_gwas(g1_path, rsid = g2_tophits$chrpos))
+  g2_g1tophits <- vcf_to_tibble(query_gwas(g2_path, chrompos = g1_tophits$chrpos))
+  g1_g2tophits <- vcf_to_tibble(query_gwas(g1_path, chrompos = g2_tophits$chrpos))
+  
+  g2_g1tophits$chrpos <- paste0(g2_g1tophits$seqnames, ":", g2_g1tophits$start, "-", g2_g1tophits$end )
+  g1_g2tophits$chrpos <- paste0(g1_g2tophits$seqnames, ":", g1_g2tophits$start, "-", g1_g2tophits$end )
+  
   
   g1_merge <- rbind(g1_tophits, g1_g2tophits[!g1_g2tophits$rsid %in% g1_tophits$rsid,])
   g2_merge <- rbind(g2_tophits, g2_g1tophits[!g2_g1tophits$rsid %in% g2_tophits$rsid,])
@@ -142,40 +160,41 @@ get_instruments <- function(ids_f){
   
   regions <- lapply(regions, function(r){
     
-      a <- rbind(vcf_to_tibble(query_gwas(g1, chrompos = r)),
-                 vcf_to_tibble(query_gwas(g2, chrompos = r)))  %>%
-          dplyr::arrange(start) %>%
-          dplyr::bind_rows()
-        message(nrow(a))
-   
-      a <- lapply(ids_f, function(i) {
-        subset(a, id == i) %>%
-          dplyr::filter(!duplicated(rsid))
-      })
-      rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
-      a <- lapply(a, function(x) {
-        subset(x, rsid %in% rsids)
-      })
-      ALT <- a[[1]]$ALT
-      a <- lapply(a, function(x) {
-        index <- x$ALT != ALT
-        if (sum(index) > 0) {
-          x$ES[index] <- x$ES[index] * -1
-          REF <- x$REF[index]
-          x$REF[index] <- x$ALT[index]
-          x$ALT[index] <- x$REF[index]
-          x$AF[index] <- 1 - x$AF[index]
-          x <- subset(x, REF == a[[1]]$REF)
-        }
-        return(x)
-      })
-      rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
-      a <- lapply(a, function(x) {
-        subset(x, rsid %in% rsids) %>%
-          dplyr::arrange(seqnames, start)
-      })
-      return(a)
-      })
+    a <- rbind(suppressMessages(vcf_to_tibble(query_gwas(g1_path, chrompos = r))),
+               suppressMessages(vcf_to_tibble(query_gwas(g2_path, chrompos = r))))  %>%
+      dplyr::arrange(start) %>%
+      dplyr::bind_rows()
+    message(nrow(a))
+    
+    a <- lapply(ids_f, function(i) {
+      subset(a, id == i) %>%
+        dplyr::filter(!duplicated(rsid))
+    })
+    rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
+    a <- lapply(a, function(x) {
+      subset(x, rsid %in% rsids)
+    })
+    ALT <- a[[1]]$ALT
+    a <- lapply(a, function(x) {
+      index <- x$ALT != ALT
+      if (sum(index) > 0) {
+        x$ES[index] <- x$ES[index] * -1
+        REF <- x$REF[index]
+        x$REF[index] <- x$ALT[index]
+        x$ALT[index] <- x$REF[index]
+        x$AF[index] <- 1 - x$AF[index]
+        x <- subset(x, REF == a[[1]]$REF)
+      }
+      return(x)
+    })
+    rsids <- Reduce(intersect, lapply(a, function(x) x$rsid))
+    a <- lapply(a, function(x) {
+      subset(x, rsid %in% rsids) %>%
+        dplyr::arrange(seqnames, start)
+    })
+    return(a)
+
+    })
   
 
   return(list(g1_raw = g1_merge, g2_raw = g2_merge, regions ))
