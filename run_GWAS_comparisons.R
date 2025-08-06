@@ -14,7 +14,6 @@
 
 ######################################################################
 
-library(CAMERA)
 library(data.table)
 library(TwoSampleMR)
 library(ieugwasr)
@@ -24,7 +23,7 @@ library(CAMeRa, lib.loc = "/user/home/kb22541/R/x86_64-conda-linux-gnu-library/4
 library(genetics.binaRies, lib.loc= "/user/home/kb22541/R/x86_64-conda-linux-gnu-library/4.4")
 library(VariantAnnotation)
 
-setwd("../../data/")
+setwd("/user/work/kb22541/local_anc/data/")
 token <- readLines("token")[1]
 
 ###########################################################
@@ -129,14 +128,16 @@ get_instruments <- function(ids_f){
   # get top htis
   g1_tophits <- vcf_to_tibble(query_gwas(g1_path, pval=5e-8))
   g2_tophits <- vcf_to_tibble(query_gwas(g2_path, pval=5e-8))
+
   
-  if (length(g1_tophits[1,] < 1)){
+  
+  if (length(g1_tophits$rsid < 1)){
     g1_tophits <- vcf_to_tibble(query_gwas(g1_path, pval=5e-7))
-    "G1 has too few SNPs, reducing threshold"
+    print("G1 has too few SNPs, reducing threshold")
   }
-  if (length(g2_tophits[1,] < 1)){
+  if (length(g2_tophits$rsid < 1)){
     g2_tophits <- vcf_to_tibble(query_gwas(g2_path, pval=5e-7))
-    "G2 has too few SNPs, reducing threshold"
+    print("G2 has too few SNPs, reducing threshold")
   }
   
   
@@ -157,6 +158,12 @@ get_instruments <- function(ids_f){
   
   ##### extract regions for tophit SNPs in either gwas
   regions <- paste0(g1_merge$seqnames, ":", g1_merge$start - 50000, "-", g1_merge$end + 50000)
+  
+
+  write.table(as.data.frame(regions), "DEBUG_REGIONS_OUTPUT.txt", rownames=F)
+  
+  regions <- regions[!grepl("^X:", regions)]
+  
   
   regions <- lapply(regions, function(r){
     
@@ -331,10 +338,6 @@ heterogeneity_calcs <- function(df1, df2, method){
 
 
 latAm_gwas <- fread("multi_gwas_across_sources.txt")
-euro_gwas <- unique(fread("euro_gwas_pairs.txt"))
-euro_gwas <- euro_gwas[, c("id","pmid","author","trait","population","sample_size")]
-euro_gwas$source <- "IEU"
-colnames(euro_gwas)[5] <- "ancestry"
 
 # latAm_gwas <- latAm_gwas[latAm_gwas$id != "ebi-a-GCST008053",]
 
