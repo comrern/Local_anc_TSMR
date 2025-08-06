@@ -202,6 +202,9 @@ get_instruments <- function(ids_f){
 }
 
 run_fema <- function(betas, ses) {
+  
+  if (length(betas >=1)){
+  
   w <- 1 / ses^2
   beta <- rowSums(betas * w) / rowSums(w, na.rm=TRUE)
   se <- sqrt(1 / rowSums(w, na.rm=TRUE))
@@ -209,6 +212,12 @@ run_fema <- function(betas, ses) {
   p <- pnorm(z, lower.tail = FALSE)
   nstudy <- apply(betas, 1, \(x) sum(!is.na(x)))
   return(tibble(nstudy, p, z=z))
+  
+  } else{
+    message("too few SNPs for meta analysis")
+    
+  }
+  
 }
   
 
@@ -359,12 +368,18 @@ for (current_trait in unique_traits)  {
             
             instruments <- get_instruments(ids_m)
             
+            if (length(instruments$g1_raw$rsid) < 1 & length(instruments$g2_raw$rsid) < 1){
+              
+              h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
+              het <- dplyr::bind_rows(het, h)
+              
+              h <- heterogeneity_calcs(instruments[[3]], instruments[1:2] , "fema")
+              het <- dplyr::bind_rows(het, h)
+              
+              write.table(all_phen, paste0(current_trait,"_pheno_results.txt"),quote = F, row.names = F)
+              write.table(het, paste0(current_trait,"_het_results.txt"),quote = F, row.names = F)
             
-            h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
-            het <- dplyr::bind_rows(het, h)
-            
-            h <- heterogeneity_calcs(instruments[[3]], instruments[1:2] , "fema")
-            het <- dplyr::bind_rows(het, h)
+              } else print("Too Few SNPs for comparison")
             
   } else { print("File(s) does not exists")}
 }
