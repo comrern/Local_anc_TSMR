@@ -241,7 +241,7 @@ get_instruments <- function(ids_f){
 
 run_fema <- function(betas, ses) {
   
-  if (nrow(betas) >=1){
+  if (nrow(betas) >1){
   
   w <- 1 / ses^2
   beta <- rowSums(betas * w) / rowSums(w, na.rm=TRUE)
@@ -291,10 +291,11 @@ get_region_instruments <- function( instrument_regions, instrument_raw ) {
     
     d <- dplyr::select(x[[1]], seqnames, start, rsid, ALT, REF, rsid, id)
 
-    d1 <- run_fema(
-        sapply(x, \(y) y$ES), 
-        sapply(x, \(y) y$SE)
-    )
+    
+    es_mat <- t(sapply(x, \(y) y$ES))
+    se_mat <- t(sapply(x, \(y) y$SE))
+    
+    d1 <- run_fema(es_mat, se_mat)
     
     d <- dplyr::bind_cols(d, d1)
   })
@@ -386,7 +387,8 @@ unique_traits <- unique(latAm_gwas$trait)
 
 all_phen <- data.frame()
 het <- data.frame()
-unique_traits <- unique_traits[5:9] ## DEBUG
+
+
 for (current_trait in unique_traits)  {
   
 
