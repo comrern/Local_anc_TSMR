@@ -12,6 +12,12 @@
       # Repeat the above for fine Mapped SNPs (CAMERa)
 
 
+##################### TO DO ##################### 
+
+      ## apply phenotype harmonisation
+      ## Calculate AF differences
+      ## Apply M score regression to compare pheno variation vs af differences
+
 ######################################################################
 
 library(data.table)
@@ -84,6 +90,9 @@ heterogeneity <- function(data){
     
     betas <- data[i,c("ES.x","ES.y")] 
     ses <- data[i,c("SE.x","SE.y")]
+    afs <- data[i, c("AF.x","AF.Y")]
+    
+    af_diff <- abs(afs[1] - afs[2])
     
     w <- 1 / (ses)^2 # get weights
     ivw_b <- sum(betas * w) / sum(w) # ivw betas
@@ -91,14 +100,11 @@ heterogeneity <- function(data){
     
     Q <- sum(w * (betas - ivw_b)^2)
     
-    
     df <- length(betas) -1
     
     Qpval <- stats::pchisq(Q, df, lower.tail=FALSE)
     
-    Q_df[i, ] <- list(i, Q, Qpval, betas[1, 1], betas[1, 2])
-    
-    
+    Q_df[i, ] <- list(i, Q, Qpval, betas[1, 1], betas[1, 2], af_diff)
     
   }
   
@@ -113,7 +119,7 @@ heterogeneity <- function(data){
                 max(0, ((Q_all - Qdf)/ Q_all) * 100)
   )
   
-  return(Q_total)  
+  return(Q_df, Q_total)  
   
   
 }
@@ -176,10 +182,10 @@ get_instruments <- function(ids_f){
     g1_g2tophits$chrpos <- paste0(g1_g2tophits$seqnames, ":", g1_g2tophits$start, "-", g1_g2tophits$end )
     
     
-    g1_merge <- rbind(g1_tophits[,c("chrpos", "ID", "id", "rsid","LP","ES","SE","REF", "ALT","seqnames","start","end")], 
-                      g1_g2tophits[!g1_g2tophits$rsid %in% g1_tophits$rsid, c("chrpos", "ID", "id", "rsid","LP","ES","SE","REF", "ALT","seqnames","start","end")])
-    g2_merge <- rbind(g2_tophits[,c("chrpos", "ID", "id", "rsid","LP","ES","SE","REF", "ALT","seqnames","start","end")], 
-                      g2_g1tophits[!g2_g1tophits$rsid %in% g2_tophits$rsid, c("chrpos", "ID", "id", "rsid","LP","ES","SE","REF", "ALT","seqnames","start","end")])
+    g1_merge <- rbind(g1_tophits[,c("chrpos", "ID", "id", "rsid","LP","ES","SE","AF","REF", "ALT","seqnames","start","end")], 
+                      g1_g2tophits[!g1_g2tophits$rsid %in% g1_tophits$rsid, c("chrpos", "ID", "id", "rsid","LP","ES","SE","AF","REF", "ALT","seqnames","start","end")])
+    g2_merge <- rbind(g2_tophits[,c("chrpos", "ID", "id", "rsid","LP","ES","SE","AF","REF", "ALT","seqnames","start","end")], 
+                      g2_g1tophits[!g2_g1tophits$rsid %in% g2_tophits$rsid, c("chrpos", "ID", "id", "rsid","LP","ES","AF","SE","REF", "ALT","seqnames","start","end")])
     
     write.table(g1_merge, "g1_merge") ## DBEUG
     write.table(g2_merge, "g2_merge")
@@ -292,10 +298,10 @@ get_region_instruments <- function( instrument_regions, instrument_raw ) {
     d <- dplyr::select(x[[1]], seqnames, start, rsid, ALT, REF, rsid, id)
 
     
-    es_mat <- t(sapply(x, \(y) y$ES))
-    se_mat <- t(sapply(x, \(y) y$SE))
-    
-    d1 <- run_fema(es_mat, se_mat)
+    d1 <- run_fema(
+      sapply(x, \(y) y$ES), 
+      sapply(x, \(y) y$SE)
+    )
     
     d <- dplyr::bind_cols(d, d1)
   })
@@ -384,6 +390,8 @@ latAm_gwas <- fread("multi_gwas_across_sources.txt")
 
 latAm_gwas <- latAm_gwas[latAm_gwas$source == "IEU" & latAm_gwas$trait != "asthma",] # remove asthma as this was matched to GWAS catalogue 
 unique_traits <- unique(latAm_gwas$trait)
+latAm_gwas <- latAm_gwas[latAm_gwas$ancestry == "European",]
+
 
 all_phen <- data.frame()
 het <- data.frame()
@@ -407,14 +415,14 @@ for (current_trait in unique_traits)  {
             
             if (!is.null(instruments)) {
               
-              h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw")
+              h <- heterogeneity_calcs(instruments$g1_raw, instruments$g2_raw, "raw", p)
               het <- dplyr::bind_rows(het, h)
               
-              h <- heterogeneity_calcs(instruments[[3]], instruments[1:2], "fema")
+              h <- heterogeneity_calcs(instruments[[3]], instruments[1:2], "fema", p)
               het <- dplyr::bind_rows(het, h)
               
-              write.table(all_phen, paste0(current_trait, "_pheno_results.txt"), quote = FALSE, row.names = FALSE)
-              write.table(het, paste0(current_trait, "_het_results.txt"), quote = FALSE, row.names = FALSE)
+              write.table(all_phen, paste0(current_trait, "_pheno_results_euros.txt"), quote = FALSE, row.names = FALSE)
+              write.table(het, paste0(current_trait, "_het_results_euros.txt"), quote = FALSE, row.names = FALSE)
               
             } else {
               message("Too few SNPs for comparison.")
@@ -424,8 +432,8 @@ for (current_trait in unique_traits)  {
   } else { print("File(s) does not exists")}
 }
 
-write.table(all_phen, "pheno_results.txt",quote = F, row.names = F)
-write.table(het, "het_results.txt",quote = F, row.names = F)
+write.table(all_phen, "pheno_results_euros.txt",quote = F, row.names = F)
+write.table(het, "het_results_euros.txt",quote = F, row.names = F)
 
 
 
