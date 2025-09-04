@@ -10,7 +10,6 @@
 # get clumped top hits fromall GWAS, make master SNP list
 
 
-
 ###########################################################
 
 library(data.table)
@@ -34,8 +33,8 @@ token <- readLines("token")[1]
 ########################
 
 gwas_cat_cols <- c("SNP","POS","CHROM","REF","ALT","beta","se","p_value","RAF")
-ieu_cols <- c("rsid","POS","CHROM","REF","ALT","ES","SE","LP","AF")
-output_cols <- c("SNP","POS","CHR","EA","OA","BETA","SE","PVAL","OAF")
+ieu_cols <- c("rsid","start","seqnames","REF","ALT","ES","SE","LP","AF")
+output_cols <- c("MARKERNAME","POSITION","CHROMOSOME","EA","NEA","BETA","SE","PVAL","EAF","N")
 
 
 
@@ -48,43 +47,47 @@ trait_list_EUR <- trait_list[trait_list$ancestry == "European",]
 ## Check if files exist
 
 
-results <-c()
-
-## get top hits list
-for (file in trait_list$id){
-  
-  filepath <- (paste0("vcfs/", file, ".vcf.gz"))
-  
-  if (file.exists(filepath)){
-    
-    message( "File ", file, " exists: TRUE")
-    
-    if (trait_list[trait_list$id == file,]$source == "IEU"){
-    
-      tophits <-suppressMessages(vcf_to_tibble(query_gwas(filepath, pval=5e-7)))
-    } else {
-      
-      tophits <- fread(filepath)   # reads tab-separated, gzipped
-      tophits <- tophits[tophits$p_value < 5e-7, ]  
-      
-    }
-    
-    
-    
-    if (length(tophits$SNP > 1)){
-      
-      message(length(tophits$SNP), "top hits for file ", file)
-      
-      results <-c(results, tophits$SNP)
-    } else{message("less than 1 top hit for ", file)}
-    
-    
-  } else{message(paste("File", file, "does not exist.")) }
-  
-}
-
-results <- unique(results)
-message("Total SNPs = ", length(results) ," \nFinsihed tophits extraction, making subsets..")
+# results <-c()
+# 
+# ## get top hits list
+# for (file in trait_list$id){
+#   
+# 
+#   filepath <- (paste0("vcfs/", file, ".vcf.gz"))
+#   
+#   if (file.exists(filepath)){
+#     
+#     message( "File ", file, " exists: TRUE")
+#     
+#     if (trait_list[trait_list$id == file,]$source == "IEU"){
+#     
+#       tophits <-suppressMessages(vcf_to_tibble(query_gwas(filepath, pval=5e-7)))
+#       names(tophits)[names(tophits) == "rsid"] <- "SNP"
+#       
+#       
+#     } else {
+#       
+#       tophits <- fread(filepath)   # reads tab-separated, gzipped
+#       tophits <- tophits[tophits$p_value < 5e-7, ]  
+#       
+#     }
+#     
+#     
+#     
+#     if (length(tophits$SNP > 1)){
+#       
+#       message(length(tophits$SNP), "top hits for file ", file)
+#       
+#       results <-c(results, tophits$SNP)
+#     } else{message("less than 1 top hit for ", file)}
+#     
+#     
+#   } else{message(paste("File", file, "does not exist.")) }
+#   
+# }
+# 
+# results <- unique(results)
+# message("Total SNPs = ", length(results) ," \nFinsihed tophits extraction, making subsets..")
 
 
 for (file in trait_list$id){
@@ -94,8 +97,12 @@ for (file in trait_list$id){
      
      if (trait_list[trait_list$id == file,]$source == "EBI"){
         cols <- gwas_cat_cols
-        
-        subset <- subset[,cols]
+        main <- fread(filepath)
+        print(paste(file, "columns: ", colnames(main)))
+
+        main <- main[, cols, with = FALSE]
+
+        subset <- main[main$p_value <=5e-7,]
      }
         
         
@@ -103,17 +110,28 @@ for (file in trait_list$id){
     
      else { 
         cols <- ieu_cols
+
         
-        subset <-suppressMessages(vcf_to_tibble(query_gwas(filepath, rsid=results)))
+        main <-(vcf_to_tibble(readVcf(filepath)))
+        print(paste(file, "columns: ", colnames(main)))
+        
+        main <- main[, cols, with = FALSE]  
+        # subset <- vcf_to_tibble(query_gwas(main, pval = 5e-7))
      }
     
      
-    message(length(subset$rsid), "of",length(results), "extracted for ", file)
-    subset <- subset[,cols]
+    # message(length(subset$rsid), "of",length(results), "extracted for ", file)
+    # 
+    # subset <- subset[,..cols]
+    # subset$N <- 1000
     
-    colnames(subset) <- output_cols
+    main$N <- max(trait_list[trait_list$id == file,]$sample_size)
     
-    write.table(subset, paste0("subset/", file, ".txt", sep = "\t", row.names=F, quote=F))
+    colnames(main) <- output_cols
+    write.table(main, paste0("subset/", file,"_main.txt"), sep= "\t", row.names=F, quote=F)
+    # colnames(subset) <- output_cols
+    
+    # write.table(subset, paste0("subset/", file, ".txt"), sep = "\t", row.names=F, quote=F)
     
 }
 
