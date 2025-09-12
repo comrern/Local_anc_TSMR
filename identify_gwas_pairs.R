@@ -22,8 +22,7 @@ filtered_cat <- merged_cat %>%
   filter(`BROAD.ANCESTRAL.CATEGORY` == "Hispanic or Latin American",
          STAGE == "initial",
          !is.na(REPLICATION.SAMPLE.DESCRIPTION),
-         `FULL.SUMMARY.STATISTICS` == "yes",
-         `NUMBER.OF.INDIVDUALS` >= 1000)
+         `FULL.SUMMARY.STATISTICS` == "yes")
 
 ### 3. Collapse to 1 GWAS per PMID + trait (keep max N)
 filtered_cat <- filtered_cat %>%
